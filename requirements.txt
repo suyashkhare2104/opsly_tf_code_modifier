@@ -1,0 +1,12 @@
+# Core dependencies
+networkx>=2.6.0
+GitPython>=3.1.0
+python-hcl2>=3.0.0  # For parsing Terraform HCL files
+streamlit>=1.15.0   # For the web interface
+
+# Google Cloud and Vertex AI
+google-cloud-aiplatform>=1.25.0
+
+# Visualization dependencies
+matplotlib>=3.5.0   # For graph visualization
+plotly>=5.10.0      # For interactive visualization
