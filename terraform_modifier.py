@@ -330,6 +330,54 @@ class TerraformCodeModifier:
         
         return modified_files
 
+    def generate_file_summary(self, file_path, content=None):
+        """
+        Generate a summary of a Terraform file using Gemini.
+        
+        Args:
+            file_path (str): Path to the file
+            content (str, optional): File content if already read
+            
+        Returns:
+            str: Summary of the file
+        """
+        try:
+            # Initialize Vertex AI model
+            model = self.GenerativeModel(self.model_name)
+            
+            # Read the file content if not provided
+            if content is None:
+                full_path = os.path.join(self.analyzer.local_dir, file_path)
+                with open(full_path, 'r') as f:
+                    content = f.read()
+            
+            # Truncate content if it's too long
+            if len(content) > 10000:
+                content = content[:10000] + "... (truncated)"
+            
+            # Create a prompt for the model
+            prompt = f"""
+            You are a Terraform expert. Please provide a detailed summary of what this Terraform file does.
+            Focus on the resources, modules, variables, and outputs defined in the file.
+            
+            File: {file_path}
+            
+            ```terraform
+            {content}
+            ```
+            
+            Your summary should be comprehensive but concise (3-5 sentences).
+            """
+            
+            # Generate response
+            response = model.generate_content(prompt)
+            summary = response.text.strip()
+            
+            return summary
+        except Exception as e:
+            print(f"Error generating summary for {file_path}: {str(e)}")
+            return f"Terraform file: {file_path}"
+
 
 def main():
     """Main function to run the modifier from command line."""

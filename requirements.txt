@@ -10,3 +10,5 @@ google-cloud-aiplatform>=1.25.0
 # Visualization dependencies
 matplotlib>=3.5.0   # For graph visualization
 plotly>=5.10.0      # For interactive visualization
+sentence-transformers>=2.2.2
+scikit-learn>=1.2.2

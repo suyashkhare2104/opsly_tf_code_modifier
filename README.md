@@ -4,15 +4,16 @@ A powerful tool that uses AI to analyze and modify Terraform code based on natur
 
 ## Overview
 
-This application provides a web interface for analyzing Terraform repositories and generating code modifications based on natural language instructions. It leverages Google's Gemini AI models to understand your Terraform codebase and implement requested changes.
+This application provides a web interface for analyzing Terraform repositories and generating code modifications based on natural language instructions. It leverages Google's Gemini AI models to understand your Terraform codebase and implement requested changes, enhanced with vector embeddings for intelligent file selection.
 
 ## Features
 
 - **Repository Analysis**: Clone and analyze Terraform repositories to build dependency graphs
-- **Intelligent File Identification**: Identify relevant files for a specific modification request
+- **Intelligent File Identification**: Identify relevant files for a specific modification request using both AI and vector similarity
 - **AI-Powered Code Generation**: Generate code modifications using Gemini AI models
 - **Interactive Visualization**: View dependency graphs of your Terraform modules
 - **Web Interface**: User-friendly Streamlit interface for easy interaction
+- **Semantic Search**: Find relevant files using vector embeddings and similarity matching
 
 ## How It Works
 
@@ -23,14 +24,18 @@ The application first clones the specified Terraform repository and analyzes its
 - Identifies all `.tf` and `.tf.json` files
 - Parses each file to extract module dependencies
 - Builds a dependency graph showing relationships between files
-- Generates descriptions for each file using AI
+- Generates detailed descriptions for each file using AI
+- Creates vector embeddings of file summaries for semantic search
 
 ### 2. File Identification
 
 When you submit a modification request:
 
-- The system uses AI to identify which files need to be modified
-- It analyzes the dependency graph to understand relationships between files
+- The system vectorizes your request using the all-MiniLM-L6-v2 model
+- It compares this vector against all file summary vectors to find the most similar files
+- It also uses AI to identify which files need to be modified
+- It combines both approaches for more accurate file selection
+- It analyzes the dependency graph to include related files
 - It presents the relevant files for review
 
 ### 3. Code Modification
@@ -103,11 +108,13 @@ Based on your natural language request:
 2. **Analyze the repository**:
    - Click "Analyze Repository"
    - The system will clone the repository and build a dependency graph
+   - It will generate summaries and vector embeddings for each file
    - You can explore the files and visualize dependencies
 
 3. **Submit a modification request**:
    - Enter your request in natural language (e.g., "Add a new S3 bucket with versioning enabled")
    - Click "Identify Relevant Files" to see which files need to be modified
+   - The system will use both vector similarity and AI to find the most relevant files
    - Click "Generate Modifications" to create the code changes
 
 4. **Review and apply changes**:
@@ -162,14 +169,13 @@ For a complete solution, you'd need:
 
 ## 2. How do we fetch the relevant files from a massive codebase?
 
-The current implementation has a basic approach:
+The current implementation has a hybrid approach:
+- Vector embeddings of file summaries for semantic search
 - `identify_relevant_files()` in `TerraformCodeModifier` uses Gemini to identify relevant files
-- It sends file information (paths, descriptions, dependencies) to the LLM
+- It combines both approaches for better accuracy
 
 **Improved approaches:**
-- **Semantic Search**: Embed file contents and descriptions using embeddings models
-  - Store these embeddings in a vector database (Pinecone, Weaviate, etc.)
-  - Search for relevant files based on the modification request
+- **Enhanced Vector Search**: Use more sophisticated embedding models or fine-tuned models
 - **Dependency-Aware Retrieval**: Use the dependency graph to expand the set of relevant files
   - If a file is identified as relevant, also include its direct dependencies
 - **Hierarchical Retrieval**: First identify relevant modules, then relevant files within those modules
@@ -196,8 +202,8 @@ The current implementation already uses a graph structure:
 
 ## 4. How will RAG be used here? Graph RAG perhaps?
 
-The current implementation uses a basic RAG approach:
-- It retrieves relevant files based on the modification request
+The current implementation uses a hybrid RAG approach:
+- It retrieves relevant files based on vector similarity and AI identification
 - It provides these files as context to the LLM for generating modifications
 
 **Enhanced RAG approaches:**
@@ -205,7 +211,7 @@ The current implementation uses a basic RAG approach:
   - Traverse the graph to find related files based on dependencies
   - Use graph algorithms (PageRank, centrality) to identify important files
 - **Multi-hop Retrieval**: Follow dependencies multiple hops to gather related context
-- **Hybrid Retrieval**: Combine semantic search with graph-based retrieval
+- **Hybrid Retrieval**: Combine semantic search with graph-based retrieval (already implemented)
 - **Chunked RAG**: Break files into semantic chunks for more precise retrieval
 - **Recursive Retrieval**: Start with a small context, then recursively retrieve more context as needed
 

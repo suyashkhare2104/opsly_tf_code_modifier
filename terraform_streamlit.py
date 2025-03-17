@@ -17,6 +17,9 @@ import matplotlib.pyplot as plt
 import io
 import base64
 from matplotlib.colors import LinearSegmentedColormap
+import numpy as np
+from sentence_transformers import SentenceTransformer
+from sklearn.metrics.pairwise import cosine_similarity
 
 # Import the analyzer and modifier
 from terraform_analyzer import TerraformRepoAnalyzer
@@ -324,6 +327,12 @@ if 'relevant_files' not in st.session_state:
     st.session_state.relevant_files = []
 if 'modifications' not in st.session_state:
     st.session_state.modifications = {}
+if 'file_summaries' not in st.session_state:
+    st.session_state.file_summaries = {}
+if 'file_vectors' not in st.session_state:
+    st.session_state.file_vectors = {}
+if 'embedding_model' not in st.session_state:
+    st.session_state.embedding_model = None
 
 # Title and description
 st.title("🔧 Terraform Code Modifier")
@@ -460,6 +469,49 @@ if analyze_button and repo_url:
                 st.session_state.repo_analyzed = False
                 st.stop()
             
+            # Generate file summaries and vectorize them
+            with st.status("Generating file summaries and embeddings..."):
+                # Initialize the embedding model
+                if st.session_state.embedding_model is None:
+                    st.session_state.embedding_model = SentenceTransformer('all-MiniLM-L6-v2')
+                
+                # Generate summaries for each file
+                file_summaries = {}
+                for file_path in analyzer.dependency_graph.nodes():
+                    # Check if we already have a description from the analyzer
+                    description = analyzer.dependency_graph.nodes[file_path].get('description')
+                    if not description or description == "Terraform configuration file":
+                        # Generate a more detailed summary
+                        content = read_file_content(analyzer, file_path)
+                        if not content.startswith("Error"):
+                            # Initialize the modifier to use Gemini for summaries
+                            if not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+                                st.warning("Google Cloud credentials not found. Using basic file descriptions.")
+                                description = f"Terraform file: {file_path}"
+                            else:
+                                try:
+                                    modifier = TerraformCodeModifier(analyzer, model_name=model_name)
+                                    description = modifier.generate_file_summary(file_path, content)
+                                except Exception as e:
+                                    st.warning(f"Error generating summary for {file_path}: {str(e)}")
+                                    description = f"Terraform file: {file_path}"
+                        else:
+                            description = f"Terraform file: {file_path}"
+                    
+                    file_summaries[file_path] = description
+                    st.write(f"Processed: {file_path}")
+                
+                # Vectorize the summaries
+                file_vectors = {}
+                for file_path, summary in file_summaries.items():
+                    file_vectors[file_path] = st.session_state.embedding_model.encode(summary)
+                
+                # Store in session state
+                st.session_state.file_summaries = file_summaries
+                st.session_state.file_vectors = file_vectors
+                
+                st.success(f"Generated summaries and embeddings for {len(file_summaries)} files.")
+            
             # Store the analyzer in session state
             st.session_state.analyzer = analyzer
             st.session_state.repo_analyzed = True
@@ -574,14 +626,60 @@ if st.session_state.repo_analyzed:
                     # Initialize the modifier
                     modifier = TerraformCodeModifier(analyzer, model_name=model_name)
                     
-                    # Identify relevant files
-                    relevant_files = modifier.identify_relevant_files(modification_request)
+                    # Use vector similarity to find relevant files
+                    if st.session_state.embedding_model is not None and st.session_state.file_vectors:
+                        # Vectorize the modification request
+                        request_vector = st.session_state.embedding_model.encode(modification_request)
+                        
+                        # Calculate similarity scores
+                        similarities = {}
+                        for file_path, file_vector in st.session_state.file_vectors.items():
+                            similarity = cosine_similarity([request_vector], [file_vector])[0][0]
+                            similarities[file_path] = similarity
+                        
+                        # Sort files by similarity score
+                        sorted_files = sorted(similarities.items(), key=lambda x: x[1], reverse=True)
+                        
+                        # Take top N most similar files
+                        top_n = 5  # Adjust as needed
+                        top_files = [file_path for file_path, score in sorted_files[:top_n]]
+                        
+                        # Add dependencies of top files
+                        relevant_files = set(top_files)
+                        for file_path in top_files:
+                            # Add direct dependencies
+                            for _, target in analyzer.dependency_graph.out_edges(file_path):
+                                relevant_files.add(target)
+                        
+                        relevant_files = list(relevant_files)
+                        
+                        # Also use Gemini to identify files for comparison
+                        gemini_files = modifier.identify_relevant_files(modification_request)
+                        
+                        # Combine both approaches
+                        combined_files = list(set(relevant_files + gemini_files))
+                        
+                        st.session_state.relevant_files = combined_files
+                        
+                        # Show comparison
+                        with st.expander("File Selection Method Comparison"):
+                            col1, col2 = st.columns(2)
+                            with col1:
+                                st.subheader("Vector Similarity")
+                                for file_path, score in sorted_files[:top_n]:
+                                    st.write(f"{file_path}: {score:.4f}")
+                            
+                            with col2:
+                                st.subheader("Gemini Selection")
+                                for file in gemini_files:
+                                    st.write(file)
+                    else:
+                        # Fallback to just using Gemini
+                        relevant_files = modifier.identify_relevant_files(modification_request)
+                        st.session_state.relevant_files = relevant_files
                     
-                    # Store the relevant files in session state
-                    st.session_state.relevant_files = relevant_files
-                    
-                    if relevant_files:
-                        st.success(f"Identified {len(relevant_files)} relevant files.")
+                    if st.session_state.relevant_files:
+                        st.success(f"Identified {len(st.session_state.relevant_files)} relevant files.")
                     else:
                         st.warning("No relevant files identified.")
                 except Exception as e:
